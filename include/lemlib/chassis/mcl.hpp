@@ -66,4 +66,10 @@ class Beamer {
         pros::Distance sensor;
 };
 
+// Initializes MCL
+void initMCL();
+
+/// Runs MCL (used in a cycle) and returns the predicted pose
+lemlib::Pose runMCL(std::vector<lemlib::Beam> &beams, lemlib::Pose delta_pose);
+
 } // namespace lemlib

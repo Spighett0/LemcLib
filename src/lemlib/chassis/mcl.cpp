@@ -11,15 +11,105 @@
 // The particles in the simulation
 std::vector<lemlib::Particle> particles;
 
-// A temporary array for particles whilst resampling
-std::vector<lemlib::Particle> resamp_particles;
+// temporary vectors reserved to save time
+std::vector<float> particle_sum_weights;
+std::vector<float> particle_offsets;
+std::vector<lemlib::Particle> particle_resamp;
 
 // The global MCL configs
 lemlib::MCLConfigs mcl_configs(0, 0, 0, 0, 0);
 
-void initializeParticles() {
-        for (auto &p : particles)
-                p = lemlib::Particle(0, 0, 0, -1);
+// The average pose of all the particles
+lemlib::Pose avg_pose = lemlib::Pose(0, 0, 0);
+
+void initMCL() {
+        particle_resamp.reserve(mcl_configs.N_PARTICLES);
+        particle_sum_weights.reserve(mcl_configs.N_PARTICLES);
+        particle_offsets.reserve(mcl_configs.N_PARTICLES);
+
+        particles.reserve(mcl_configs.N_PARTICLES);
+        for (int i = 0; i < mcl_configs.N_PARTICLES; i++)
+                particles.push_back(lemlib::Particle(0, 0, 0, -1));
+}
+
+void updateStep(lemlib::Pose delta_pose) {
+        for (auto &particle : particles)
+                particle.updateDeltaNoise(delta_pose);
+}
+
+// not a single clue how this works, I just listened to claude, this WILL NOT
+// work and is NOT tested
+void resampleStep(std::vector<lemlib::Beam> &beams) {
+        // make sure to reset the pre-allocated stuff
+        particle_sum_weights.clear();
+        particle_offsets.clear();
+        particle_resamp.clear();
+
+        // calculate weights for each particle
+        // (weights show how much it matches a sensor reading)
+        // 
+        // and create a cumulative sum of the weights
+        // (creates a weight ladder where high weights take up more space)
+        float weights_sum = 0;
+        for (auto &particle : particles) {
+                particle.updateWeight(beams);
+                weights_sum += particle.weight;
+                particle_sum_weights.push_back(weights_sum);
+        }
+
+        // create evenly-spaced selection points (Low Variance Resampling)
+        float random_offset = (((float)rand())/RAND_MAX)/mcl_configs.N_PARTICLES;
+        for (int i = 0; i < mcl_configs.N_PARTICLES; i++) {
+                // Create evenly-spaced offsets
+                float offset = random_offset + (float)i / mcl_configs.N_PARTICLES;
+
+                // Scale offset to match total weight
+                offset = offset * weights_sum;
+
+                particle_offsets.push_back(offset);
+        }
+
+        // select new particles based off offsets
+        for (float offset : particle_offsets) {
+                // For this offset, find which particle it selects
+
+                for (int j = 0; j < mcl_configs.N_PARTICLES; j++) {
+                    // Check if this particle's cumulative weight is >= offset
+                    if (particle_sum_weights[j] >= offset) {
+                        // Found it! This particle gets selected
+                        particle_resamp.push_back(particles[j]);  // Copy the particle
+                        break;  // Move to next offset
+                    }
+                }
+        }
+
+        // replace the old particles with the new ones
+        std::vector<lemlib::Particle> tmp;
+        tmp = particles;
+        particles = particle_resamp;
+        particle_resamp = particles;
+
+        // reset all the weights to equal and also sum the poses
+        lemlib::Pose sum_pose = lemlib::Pose(0, 0, 0);
+        for (auto &p : particles) {
+                p.weight = 1.0 / mcl_configs.N_PARTICLES;
+                sum_pose.x = p.pose.x;
+                sum_pose.y = p.pose.y;
+                sum_pose.theta = p.pose.theta;
+        }
+        // calculate the average pose
+        avg_pose = lemlib::Pose(
+                sum_pose.x / mcl_configs.N_PARTICLES,
+                sum_pose.y / mcl_configs.N_PARTICLES,
+                sum_pose.theta / mcl_configs.N_PARTICLES
+        );
+}
+
+// Runs MCL
+lemlib::Pose runMCL(std::vector<lemlib::Beam> &beams, lemlib::Pose delta_pose) {
+        updateStep(delta_pose);
+        resampleStep(beams);
+        return avg_pose;
 }
 
 void lemlib::Particle::updateDeltaNoise(lemlib::Pose delta_pose) {
@@ -63,8 +153,7 @@ float lemlib::MCLConfigs::gaussian(float x) {
 
 void lemlib::Particle::updateWeight(std::vector<Beam> &beams) {
         float sum = 0;
-        for (auto beam : beams) {
+        for (auto beam : beams)
                 sum += mcl_configs.gaussian(distanceToWall(expectedPoint(beam)));
-        }
         weight = sum;
 }

@@ -13,6 +13,9 @@ class Beam {
                 float angle;
                 // IN INCHES
                 float distance;
+        Beam(float angle, float distance)
+        : angle(angle),
+          distance(distance) {}
 };
 
 // Particle in the MCL
@@ -26,7 +29,7 @@ class Particle {
                   weight(weight) {}
 
         // Updates the pose of a particle with noise
-        void updateDeltaNoise(lemlib::Pose delta_pose);
+        void updateDeltaNoise(lemlib::Pose deltaPose);
         // Calculates the expected point the beam should land from the current pose
         lemlib::Pose expectedPoint(Beam beam);
         // Distance to the wall -- equivalent to raycasting to the walls and finding the expected beam distance.
@@ -56,20 +59,28 @@ class MCLConfigs {
 // A sensor that measures a beam from the robot to the walls (usually a distance sensor)
 class Beamer {
         public:
-        // The angle of the sensor relative to the yaw of the robot in radians (-pi to pi)
-        float angle;
-        // The offset from the x
-        float x_offset;
-        // The offset from the y
-        float y_offset;
-        // The sensor
-        pros::Distance sensor;
+                // The angle of the sensor relative to the yaw of the robot in radians (-pi to pi)
+                float angle;
+                // The offset from the x in inches
+                float x_offset;
+                // The offset from the y in inches
+                float y_offset;
+                // The sensor
+                pros::Distance sensor;
+        Beamer(float angle, float x_offset, float y_offset, pros::Distance sensor)
+        : angle(angle),
+          x_offset(x_offset),
+          y_offset(y_offset),
+          sensor(sensor) {}
+
+        // Calculates the beam accounting for offsets
+        Beam getBeam();
 };
 
 // Initializes MCL
 void initMCL();
 
 /// Runs MCL (used in a cycle) and returns the predicted pose
-lemlib::Pose runMCL(std::vector<lemlib::Beam> &beams, lemlib::Pose delta_pose);
+lemlib::Pose runMCL(std::vector<lemlib::Beam> &beams, lemlib::Pose deltaPose);
 
 } // namespace lemlib

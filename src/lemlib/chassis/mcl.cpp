@@ -22,7 +22,7 @@ lemlib::MCLConfigs mcl_configs(0, 0, 0, 0, 0);
 // The average pose of all the particles
 lemlib::Pose avg_pose = lemlib::Pose(0, 0, 0);
 
-void initMCL() {
+void lemlib::initMCL() {
         particle_resamp.reserve(mcl_configs.N_PARTICLES);
         particle_sum_weights.reserve(mcl_configs.N_PARTICLES);
         particle_offsets.reserve(mcl_configs.N_PARTICLES);
@@ -30,6 +30,20 @@ void initMCL() {
         particles.reserve(mcl_configs.N_PARTICLES);
         for (int i = 0; i < mcl_configs.N_PARTICLES; i++)
                 particles.push_back(lemlib::Particle(0, 0, 0, -1));
+}
+
+lemlib::Beam lemlib::Beamer::getBeam() {
+        // get the distance sensor reading in inches
+        float distance = ((float)sensor.get_distance()) / 25.4;
+
+        // unit vector in beam direction
+        float ux = cos(angle);
+        float uy = sin(angle);
+
+        // correct distance is
+        float distance_correct = distance + (x_offset * ux + y_offset * uy);
+
+        return Beam(angle, distance_correct);
 }
 
 void updateStep(lemlib::Pose delta_pose) {
@@ -106,7 +120,7 @@ void resampleStep(std::vector<lemlib::Beam> &beams) {
 }
 
 // Runs MCL
-lemlib::Pose runMCL(std::vector<lemlib::Beam> &beams, lemlib::Pose delta_pose) {
+lemlib::Pose lemlib::runMCL(std::vector<lemlib::Beam> &beams, lemlib::Pose delta_pose) {
         updateStep(delta_pose);
         resampleStep(beams);
         return avg_pose;

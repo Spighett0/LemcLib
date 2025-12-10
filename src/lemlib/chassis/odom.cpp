@@ -14,9 +14,10 @@
 pros::Task* trackingTask = nullptr;
 
 // global variables
-lemlib::OdomSensors odomSensors(nullptr, nullptr, nullptr, nullptr, nullptr); // the sensors to be used for odometry
+lemlib::OdomSensors odomSensors(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr); // the sensors to be used for odometry
 lemlib::Drivetrain drive(nullptr, nullptr, 0, 0, 0, 0); // the drivetrain to be used for odometry
 lemlib::Pose odomPose(0, 0, 0); // the pose of the robot
+lemlib::Pose mclPose(0, 0, 0); // the pose predicted by MCL
 lemlib::Pose odomSpeed(0, 0, 0); // the speed of the robot
 lemlib::Pose odomLocalSpeed(0, 0, 0); // the local speed of the robot
 
@@ -34,8 +35,8 @@ void lemlib::setSensors(lemlib::OdomSensors sensors, lemlib::Drivetrain drivetra
 }
 
 lemlib::Pose lemlib::getPose(bool radians) {
-    if (radians) return odomPose;
-    else return lemlib::Pose(odomPose.x, odomPose.y, radToDeg(odomPose.theta));
+    if (radians) return mclPose;
+    else return lemlib::Pose(mclPose.x, mclPose.y, radToDeg(mclPose.theta));
 }
 
 void lemlib::setPose(lemlib::Pose pose, bool radians) {
@@ -164,12 +165,30 @@ void lemlib::update() {
     // save previous pose
     lemlib::Pose prevPose = odomPose;
 
+    // calculate global delta x and y
+    lemlib::Pose deltaPose(
+        localY * sin(avgHeading) + localX * -cos(avgHeading),
+        localY * cos(avgHeading) + localX * sin(avgHeading),
+        deltaHeading
+    );
+
     // calculate global x and y
-    odomPose.x += localY * sin(avgHeading);
-    odomPose.y += localY * cos(avgHeading);
-    odomPose.x += localX * -cos(avgHeading);
-    odomPose.y += localX * sin(avgHeading);
+    odomPose.x += deltaPose.x;
+    odomPose.y += deltaPose.y;
     odomPose.theta = heading;
+
+    // shove it into MCL (if there are mcl sensors)
+    if (odomSensors.beamers != nullptr) {
+        // get sensor reading (beams)
+        std::vector<lemlib::Beam> beams {};
+        for (auto &beamer : *odomSensors.beamers)
+            beams.push_back(beamer.getBeam());
+        // mcl
+        mclPose = lemlib::runMCL(beams, deltaPose);
+    } else {
+        // just set mcl pose to odom pose as fallback
+        mclPose = odomPose;
+    }
 
     // calculate speed
     odomSpeed.x = ema((odomPose.x - prevPose.x) / 0.01, odomSpeed.x, 0.95);
